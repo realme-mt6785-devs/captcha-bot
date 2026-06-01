@@ -1,6 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Firdaus Hakimi <hakimifirdaus944@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
-
 import asyncio
 import logging
 import os
@@ -15,10 +14,12 @@ from pyrogram.handlers.message_handler import MessageHandler
 from pyrogram.sync import idle
 from pyrogram.types.messages_and_media import Message
 
-from captcha_bot import CHAT_WHITELIST, MAX_FAIL_BEFORE_TEMPBAN, TEMP_BAN_SECONDS, TIMEOUT_SECONDS, db
+from captcha_bot import CHAT_WHITELIST, DELETE_SECONDS, MAX_FAIL_BEFORE_TEMPBAN, TEMP_BAN_SECONDS, TIMEOUT_SECONDS, db
 from captcha_bot.db_util import (
     UserRecord,
+    delete_deleter_record,
     delete_user_record,
+    get_and_create_deleter_record,
     get_user_record,
     increment_consecutive_failures,
     reset_consecutive_failures,
@@ -30,6 +31,13 @@ API_HASH = os.getenv("API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 logger = logging.getLogger(__name__)
+
+
+async def deleter(app: Client, after: float | int, chat_id: int, message_id: int) -> None:
+    await asyncio.sleep(after)
+
+    await app.delete_messages(chat_id, message_id)
+    delete_deleter_record(chat_id, message_id)
 
 
 async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) -> None:
@@ -63,7 +71,7 @@ async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) ->
                 user_id,
                 until_date=until_date,
             )
-            await app.send_message(
+            kick_ban_msg = await app.send_message(
                 chat_id,
                 (
                     f"__temporarily banned "
@@ -88,7 +96,7 @@ async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) ->
             asyncio.sleep(0.2)
             await app.unban_chat_member(chat_id, user_id)
 
-            await app.send_message(
+            kick_ban_msg = await app.send_message(
                 chat_id,
                 (
                     f"__kicked "
@@ -113,6 +121,10 @@ async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) ->
     finally:
         delete_user_record(chat_id, user_id)
         await app.delete_messages(chat_id, int(captcha_message_id))
+        delete_at = time.time() + DELETE_SECONDS
+        get_and_create_deleter_record(chat_id, kick_ban_msg.id, create=True, delete_at=delete_at)
+        asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, kick_ban_msg.id))
+        logger.info("started deleter task for message %d in chat %d", kick_ban_msg.id, chat_id)
 
 
 async def joinhandler(app: Client, message: Message) -> None:
@@ -217,20 +229,29 @@ async def verifyhandler(app: Client, message: Message) -> None:
 
     if message.text.strip() != str(record.expected):
         if message.reply_to_message and message.reply_to_message.id == record.challenge_message_id:
-            await message.reply("__wrong code.__")
+            wrong_code_msg = await message.reply("__wrong code.__")
             logger.info(
                 "user %d submitted wrong captcha in chat %d; retries allowed and consecutive failures unchanged",
                 user_id,
                 chat_id,
             )
+            curr_time = time.time()
+            get_and_create_deleter_record(chat_id, wrong_code_msg.id, create=True, delete_at=curr_time + DELETE_SECONDS)
+            asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, wrong_code_msg.id))
         return
 
-    await message.reply("__Verification successful. Welcome! Make sure you read the group's rule sent by Rose.__")
+    vfy_success_msg = await message.reply(
+        "__Verification successful. Welcome! Make sure you read the group's rule sent by Rose.__"
+    )
     await app.delete_messages(chat_id, record.challenge_message_id)
     logger.info("User %d solved captcha in chat %d", user_id, chat_id)
 
     reset_consecutive_failures(chat_id, user_id)
     delete_user_record(chat_id, user_id)
+
+    curr_time = time.time()
+    get_and_create_deleter_record(chat_id, vfy_success_msg.id, create=True, delete_at=curr_time + DELETE_SECONDS)
+    asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, vfy_success_msg.id))
 
     logger.info(
         "User %d successfully completed captcha in chat %d",
@@ -248,7 +269,8 @@ async def main():
     )
 
     loop = asyncio.get_event_loop()
-    scheduled_count = 0
+    scheduled_kicker_count = 0
+    scheduled_deleter_count = 0
 
     for chat_id_str, users in db.data.items():
         if not chat_id_str.lstrip("-").isdigit():
@@ -258,7 +280,7 @@ async def main():
             continue
 
         for user_id_str in users:
-            if user_id_str == "failures":
+            if user_id_str == "failures" or user_id_str == "deleter":
                 continue
 
             user_entry = get_user_record(int(chat_id_str), int(user_id_str))
@@ -280,9 +302,36 @@ async def main():
                     int(user_id_str),
                 )
             )
-            scheduled_count += 1
+            scheduled_kicker_count += 1
 
-    logger.info("restored %d pending kicker tasks", scheduled_count)
+    logger.info("restored %d pending kicker tasks", scheduled_kicker_count)
+
+    for chat_id_str, users in db.data.items():
+        deleter_bucket: dict[str, dict[str, float]] = users.get("deleter")
+        if deleter_bucket is None:
+            continue
+
+        for message_id_str in deleter_bucket:
+            logger.info("restoring pending deleter for chat %s, message %s", chat_id_str, message_id_str)
+            deleter_record = get_and_create_deleter_record(chat_id_str, message_id_str)
+            assert deleter_record
+
+            remaining = deleter_record.delete_at - time.time()
+            if remaining < 0:
+                remaining = 0
+
+            loop.create_task(
+                deleter(
+                    app,
+                    remaining,
+                    int(chat_id_str),
+                    int(message_id_str),
+                )
+            )
+
+            scheduled_deleter_count += 1
+
+    logger.info("restored %d pending deleter tasks", scheduled_deleter_count)
 
     app.add_handler(MessageHandler(joinhandler, filters.service), group=0)
     app.add_handler(MessageHandler(verifyhandler, filters.text), group=1)

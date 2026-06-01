@@ -1,6 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Firdaus Hakimi <hakimifirdaus944@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
-
 import logging
 from dataclasses import asdict, dataclass
 
@@ -17,6 +16,63 @@ class UserRecord:
     expected: int
     challenge_message_id: int
     expires_at: float
+
+
+@dataclass(slots=True)
+class DeleterRecord:
+    delete_at: float
+
+
+def get_and_create_deleter_record(
+    chat_id: int | str,
+    message_id: int | str,
+    *,
+    create: bool = False,
+    delete_at: float = 0,
+) -> DeleterRecord | None:
+    chat_key = str(chat_id)
+    message_key = str(message_id)
+    chat = db.data.get(chat_key)
+
+    if chat is None:
+        if not create:
+            return None
+        db.data[chat_key] = {}
+        chat = db.data[chat_key]
+
+    deleter = chat.get("deleter")
+    if deleter is None:
+        if not create:
+            return None
+        chat["deleter"] = {}
+        deleter = chat["deleter"]
+
+    message = deleter.get(message_key)
+    if message is None:
+        if not create:
+            return None
+        deleter[message_key] = {"delete_at": delete_at}
+
+    return DeleterRecord(**deleter[message_key])
+
+
+def delete_deleter_record(chat_id: int, message_id: int) -> None:
+    chat_key = str(chat_id)
+    message_key = str(message_id)
+
+    chat = db.data.get(chat_key)
+    if chat is None:
+        return
+
+    deleter = chat.get("deleter")
+    if deleter is None:
+        return
+
+    message = deleter.get(message_key)
+    if message is None:
+        return
+
+    deleter.pop(message_key, None)
 
 
 def get_failures_bucket(chat_id: int, *, create: bool = False) -> dict[str, int] | None:
