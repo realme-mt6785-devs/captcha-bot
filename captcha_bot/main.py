@@ -217,6 +217,8 @@ async def joinhandler(app: Client, message: Message) -> None:
             TIMEOUT_SECONDS,
         )
 
+    await message.delete()
+
 
 async def verifyhandler(app: Client, message: Message) -> None:
     if not message.chat or not message.from_user or not message.text:
