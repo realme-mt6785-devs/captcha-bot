@@ -98,7 +98,7 @@ async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) ->
             reset_consecutive_failures(chat_id, user_id)
         else:
             await app.ban_chat_member(chat_id, user_id)
-            asyncio.sleep(0.2)
+            await asyncio.sleep(0.2)
             await app.unban_chat_member(chat_id, user_id)
 
             kick_ban_msg = await app.send_message(
