@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import time
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 
 from pyrogram import filters
@@ -33,11 +34,15 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 logger = logging.getLogger(__name__)
 
 
-async def deleter(app: Client, after: float | int, chat_id: int, message_id: int) -> None:
+async def deleter(app: Client, after: float | int, chat_id: int, message_id: int | Iterable[int]) -> None:
     await asyncio.sleep(after)
 
+    if isinstance(message_id, int):
+        message_id = (message_id,)
+
     await app.delete_messages(chat_id, message_id)
-    delete_deleter_record(chat_id, message_id)
+    for r in message_id:
+        delete_deleter_record(chat_id, r)
 
 
 async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) -> None:
@@ -236,8 +241,9 @@ async def verifyhandler(app: Client, message: Message) -> None:
                 chat_id,
             )
             curr_time = time.time()
+            get_and_create_deleter_record(chat_id, message.id, create=True, delete_at=curr_time + DELETE_SECONDS)
             get_and_create_deleter_record(chat_id, wrong_code_msg.id, create=True, delete_at=curr_time + DELETE_SECONDS)
-            asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, wrong_code_msg.id))
+            asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, [wrong_code_msg.id, message.id]))
         return
 
     vfy_success_msg = await message.reply(
@@ -251,7 +257,8 @@ async def verifyhandler(app: Client, message: Message) -> None:
 
     curr_time = time.time()
     get_and_create_deleter_record(chat_id, vfy_success_msg.id, create=True, delete_at=curr_time + DELETE_SECONDS)
-    asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, vfy_success_msg.id))
+    get_and_create_deleter_record(chat_id, message.id, create=True, delete_at=curr_time + DELETE_SECONDS)
+    asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, [vfy_success_msg.id, message.id]))
 
     logger.info(
         "User %d successfully completed captcha in chat %d",
