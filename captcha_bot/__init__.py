@@ -13,6 +13,7 @@ CHAT_WHITELIST: list[int] = [
     -1002237651092,  # disc
     -1001754321934,  # community
     -1001309495065,  # r6
+    -1001955516964,  # ansh
 ]
 TIMEOUT_SECONDS = 60
 TEMP_BAN_SECONDS = 21600
