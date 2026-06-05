@@ -133,13 +133,17 @@ async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) ->
 
 
 async def joinhandler(app: Client, message: Message) -> None:
-    if not message.chat or not message.new_chat_members:
+    if not message.new_chat_members:
         return
 
+    assert message.chat
     assert message.chat.id
     chat_id = message.chat.id
 
+    logger.info("new member event [chat=%d]", chat_id)
+
     if chat_id not in CHAT_WHITELIST:
+        logger.info("chat not in whitelist, ignoring [chat=%d]")
         return
 
     logger.info(
