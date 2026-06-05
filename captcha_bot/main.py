@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from pyrogram import filters
 from pyrogram.client import Client
-from pyrogram.enums import ChatMemberStatus, MessageServiceType
+from pyrogram.enums import ChatMemberStatus
 from pyrogram.handlers.message_handler import MessageHandler
 from pyrogram.sync import idle
 from pyrogram.types.messages_and_media import Message
@@ -133,9 +133,6 @@ async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) ->
 
 
 async def joinhandler(app: Client, message: Message) -> None:
-    if message.service != MessageServiceType.NEW_CHAT_MEMBERS:
-        return
-
     if not message.chat or not message.new_chat_members:
         return
 
@@ -342,7 +339,7 @@ async def main():
 
     logger.info("restored %d pending deleter tasks", scheduled_deleter_count)
 
-    app.add_handler(MessageHandler(joinhandler, filters.service), group=0)
+    app.add_handler(MessageHandler(joinhandler, filters.new_chat_members), group=0)
     app.add_handler(MessageHandler(verifyhandler, filters.text), group=1)
 
     try:
