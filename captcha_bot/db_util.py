@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Firdaus Hakimi <hakimifirdaus944@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from captcha_bot import db
 
@@ -21,6 +21,11 @@ class UserRecord:
 @dataclass(slots=True)
 class DeleterRecord:
     delete_at: float
+
+
+@dataclass(slots=True)
+class FailureBucket:
+    failures: dict[UserIdKey, int] = field(default_factory=dict)
 
 
 def get_and_create_deleter_record(
@@ -75,7 +80,7 @@ def delete_deleter_record(chat_id: int, message_id: int) -> None:
     deleter.pop(message_key, None)
 
 
-def get_failures_bucket(chat_id: int, *, create: bool = False) -> dict[str, int] | None:
+def get_failures_bucket(chat_id: int, *, create: bool = False) -> FailureBucket | None:
     chat_key = str(chat_id)
     chat = db.data.get(chat_key)
 
@@ -92,29 +97,29 @@ def get_failures_bucket(chat_id: int, *, create: bool = False) -> dict[str, int]
         chat["failures"] = {}
         failures = chat["failures"]
 
-    return failures
+    return FailureBucket(failures)
 
 
 def increment_consecutive_failures(chat_id: int, user_id: int) -> int:
-    failures = get_failures_bucket(chat_id, create=True)
-    assert failures is not None
+    failure_bucket = get_failures_bucket(chat_id, create=True)
+    assert failure_bucket is not None
 
     user_key = str(user_id)
-    failures[user_key] = int(failures.get(user_key, 0)) + 1
+    failure_bucket.failures[user_key] = int(failure_bucket.failures.get(user_key, 0)) + 1
 
     logger.info(
         "Incremented consecutive failures to %d for user %d in chat %d",
-        failures[user_key],
+        failure_bucket.failures[user_key],
         user_id,
         chat_id,
     )
 
-    return failures[user_key]
+    return failure_bucket.failures[user_key]
 
 
 def reset_consecutive_failures(chat_id: int, user_id: int) -> None:
-    failures = get_failures_bucket(chat_id)
-    if failures is None:
+    failure_bucket = get_failures_bucket(chat_id)
+    if failure_bucket is None:
         logger.warning(
             "cannot reset consecutive failures for user %d in chat %d, failed to get failure bucket",
             user_id,
@@ -122,7 +127,7 @@ def reset_consecutive_failures(chat_id: int, user_id: int) -> None:
         )
         return
 
-    failures.pop(str(user_id), None)
+    failure_bucket.failures.pop(str(user_id), None)
 
 
 def get_user_record(chat_id: int, user_id: int) -> UserRecord | None:
