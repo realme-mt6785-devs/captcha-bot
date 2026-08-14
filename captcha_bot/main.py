@@ -7,20 +7,32 @@ import random
 import time
 from collections.abc import Iterable
 from datetime import datetime, timedelta
+from textwrap import dedent
 
 from pyrogram import filters
 from pyrogram.client import Client
 from pyrogram.enums import ChatMemberStatus
 from pyrogram.handlers.message_handler import MessageHandler
 from pyrogram.sync import idle
+from pyrogram.types import InputRichMessage
 from pyrogram.types.messages_and_media import Message
 
-from captcha_bot import CHAT_WHITELIST, DELETE_SECONDS, MAX_FAIL_BEFORE_TEMPBAN, TEMP_BAN_SECONDS, TIMEOUT_SECONDS, db
+from captcha_bot import (
+    CHAT_WHITELIST,
+    DELETE_SECONDS,
+    FAIL_COUNT_COOLDOWN_TIME,
+    FAIL_COUNT_SWEEPER_CHAT_ID,
+    MAX_FAIL_BEFORE_TEMPBAN,
+    TEMP_BAN_SECONDS,
+    TIMEOUT_SECONDS,
+    db,
+)
 from captcha_bot.db_util import (
     UserRecord,
     delete_deleter_record,
     delete_user_record,
     get_and_create_deleter_record,
+    get_failures_bucket,
     get_user_record,
     increment_consecutive_failures,
     reset_consecutive_failures,
@@ -63,13 +75,14 @@ async def kicker(app: Client, after: float | int, chat_id: int, user_id: int) ->
         member = await app.get_chat_member(chat_id, user_id)
         failures = increment_consecutive_failures(chat_id, user_id)
         logger.info(
-            "Captcha timeout for user %d in chat %d; consecutive failures=%d",
+            "Captcha timeout for user %d in chat %d; consecutive failures=%d last failed attempt=%f",
             user_id,
             chat_id,
-            failures,
+            failures[0],
+            failures[1],
         )
 
-        if failures >= MAX_FAIL_BEFORE_TEMPBAN:
+        if failures[0] >= MAX_FAIL_BEFORE_TEMPBAN:
             until_date = datetime.now() + timedelta(seconds=TEMP_BAN_SECONDS)
             await app.ban_chat_member(
                 chat_id,
@@ -270,6 +283,51 @@ async def verifyhandler(app: Client, message: Message) -> None:
     )
 
 
+async def failed_captcha_sweep_worker(app: Client):
+    while True:
+        logger.info("[sweep worker] starting sweep")
+        sweeped_count = 0
+        chat_count = 0
+        for chat_id_str in db.data.keys():
+            chat_id = int(chat_id_str)
+            fb = get_failures_bucket(chat_id)
+            if not fb:
+                continue
+
+            for user_id_str, failure_data in fb.failures.items():
+                user_id = int(user_id_str)
+                if time.time() - failure_data[1] >= FAIL_COUNT_COOLDOWN_TIME:
+                    increment_consecutive_failures(chat_id, user_id, increment_by=-2)
+                    sweeped_count += 1
+
+            chat_count += 1
+
+        if sweeped_count > 0:
+            logger.info(
+                "[sweep worker] captcha failure count reduced by 2 for %d people in $d chats",
+                sweeped_count,
+                chat_count,
+            )
+            await app.send_rich_message(
+                FAIL_COUNT_SWEEPER_CHAT_ID,
+                InputRichMessage(
+                    markdown=dedent(
+                        f"""\
+                        # [fail count sweeper]
+
+                        $$ {sweeped_count} $$ people in $$ {chat_count} $$ chats had
+                        their captcha failure count **decreased by 2** after 1 whole
+                        day of not failing captcha.
+                        """
+                    )
+                ),
+            )
+        else:
+            logger.info("[sweep worker] no one were sweeped")
+
+        await asyncio.sleep(3600)
+
+
 async def main():
     app = Client(
         name="Captcha Bot",
@@ -348,6 +406,7 @@ async def main():
 
     try:
         await app.start()
+        loop.create_task(failed_captcha_sweep_worker(app))
         await idle()
     finally:
         await app.stop()

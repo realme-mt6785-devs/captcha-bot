@@ -34,15 +34,15 @@ wheels = [
 
 [[package]]
 name = "kurigram"
-version = "2.2.22"
+version = "2.2.24"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyaes" },
     { name = "python-socks" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/49/72/6e7098040fc2fa876c06b314bb6af9290d521276d93ce0e00833985ccb89/kurigram-2.2.22.tar.gz", hash = "sha256:b19a462b0c91b1f594f84e1b65e1c1c8010748f86d5b9a4279d7b6e4dfb021ef", size = 575603, upload-time = "2026-04-17T21:33:47.428Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/0a/6cd1ced210b02cabef151aa17c193418528c6d49f9d4368a2e0975d11f96/kurigram-2.2.24.tar.gz", hash = "sha256:535644dcb23696ae7d838a2f8c14675a5b3fa50906d51dc1434a29620d62813b", size = 602931, upload-time = "2026-07-11T11:29:54.136Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/44/3d6a84df70aa1fa3ab9940b32f0ea309c6c818062ad39709c39dc830e08f/kurigram-2.2.22-py3-none-any.whl", hash = "sha256:de1a7d787bd3727d930e600e6b4aae3189f85ddc47dd8ecacd5415a5157d812c", size = 5598390, upload-time = "2026-04-17T21:33:45.091Z" },
+    { url = "https://files.pythonhosted.org/packages/54/59/e5f953421b8229805a9f63e55accaa215fce126f75cd66e0a909c1d5ff18/kurigram-2.2.24-py3-none-any.whl", hash = "sha256:ec8417c8f767d974bb54cd19966d0057871c1b63faeb096f7a674702e3531824", size = 5799272, upload-time = "2026-07-11T11:29:52.31Z" },
 ]
 
 [[package]]

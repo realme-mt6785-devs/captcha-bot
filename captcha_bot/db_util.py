@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Firdaus Hakimi <hakimifirdaus944@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 import logging
+import time
 from dataclasses import asdict, dataclass, field
 
 from captcha_bot import db
@@ -9,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 type UserIdKey = str
 type ChatIdKey = str
+type FailureCount = int
+type LastFailedAttempt = float
 
 
 @dataclass(slots=True)
@@ -25,7 +28,7 @@ class DeleterRecord:
 
 @dataclass(slots=True)
 class FailureBucket:
-    failures: dict[UserIdKey, int] = field(default_factory=dict)
+    failures: dict[UserIdKey, tuple[FailureCount, LastFailedAttempt]] = field(default_factory=dict)
 
 
 def get_and_create_deleter_record(
@@ -100,18 +103,35 @@ def get_failures_bucket(chat_id: int, *, create: bool = False) -> FailureBucket 
     return FailureBucket(failures)
 
 
-def increment_consecutive_failures(chat_id: int, user_id: int) -> int:
+def increment_consecutive_failures(
+    chat_id: int, user_id: int, increment_by: int = 1
+) -> tuple[FailureCount, LastFailedAttempt]:
     failure_bucket = get_failures_bucket(chat_id, create=True)
     assert failure_bucket is not None
 
     user_key = str(user_id)
-    failure_bucket.failures[user_key] = int(failure_bucket.failures.get(user_key, 0)) + 1
+    user_failure_data = failure_bucket.failures.get(user_key, (0, time.time()))
+    if isinstance(user_failure_data, int):  # old format, db must be migrated
+        failure_bucket.failures[user_key] = (user_failure_data, time.time())
+        user_failure_data = failure_bucket.failures.get(user_key)
+        assert isinstance(user_failure_data, tuple)
+
+    current_failure_count = user_failure_data[0]
+    new_failure_count = current_failure_count + increment_by
+
+    if new_failure_count <= 0:
+        reset_consecutive_failures(chat_id, user_id)
+        return (0, 0)
+
+    failure_bucket.failures[user_key] = (new_failure_count, time.time())
 
     logger.info(
-        "Incremented consecutive failures to %d for user %d in chat %d",
-        failure_bucket.failures[user_key],
+        "Incremented consecutive failures from %d to %d for user %d in chat %d, new last failure timestamp = %f",
+        current_failure_count,
+        new_failure_count,
         user_id,
         chat_id,
+        failure_bucket.failures[user_key][1],
     )
 
     return failure_bucket.failures[user_key]
