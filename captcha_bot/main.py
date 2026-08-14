@@ -296,6 +296,16 @@ async def failed_captcha_sweep_worker(app: Client):
 
             for user_id_str, failure_data in fb.failures.items():
                 user_id = int(user_id_str)
+
+                if isinstance(failure_data, int):
+                    logger.info(
+                        "old db format for failure data, migrating chat_id=%d user_id=%d",
+                        chat_id,
+                        user_id,
+                    )
+                    increment_consecutive_failures(chat_id, user_id, increment_by=0)
+                    continue
+
                 if time.time() - failure_data[1] >= FAIL_COUNT_COOLDOWN_TIME:
                     increment_consecutive_failures(chat_id, user_id, increment_by=-2)
                     sweeped_count += 1
