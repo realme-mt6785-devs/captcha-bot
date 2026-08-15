@@ -249,6 +249,7 @@ async def verifyhandler(app: Client, message: Message) -> None:
     logger.info("received verification message from user %d in chat %d", user_id, chat_id)
 
     if message.text.strip() != str(record.expected):
+        curr_time = time.time()
         if message.reply_to_message and message.reply_to_message.id == record.challenge_message_id:
             wrong_code_msg = await message.reply("__wrong code.__")
             logger.info(
@@ -256,7 +257,6 @@ async def verifyhandler(app: Client, message: Message) -> None:
                 user_id,
                 chat_id,
             )
-            curr_time = time.time()
             get_and_create_deleter_record(chat_id, message.id, create=True, delete_at=curr_time + DELETE_SECONDS)
             get_and_create_deleter_record(chat_id, wrong_code_msg.id, create=True, delete_at=curr_time + DELETE_SECONDS)
             asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, [wrong_code_msg.id, message.id]))
@@ -265,6 +265,8 @@ async def verifyhandler(app: Client, message: Message) -> None:
                 "__Please solve the captcha before sending any message in this group. "
                 "This message and your message will be deleted in 5 seconds.__"
             )
+            get_and_create_deleter_record(chat_id, message.id, create=True, delete_at=curr_time + DELETE_SECONDS)
+            get_and_create_deleter_record(chat_id, forbid_msg.id, create=True, delete_at=curr_time + DELETE_SECONDS)
             asyncio.create_task(deleter(app, 5, chat_id, [forbid_msg.id, message.id]))
         return
 
