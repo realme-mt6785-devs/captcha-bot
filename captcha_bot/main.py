@@ -343,7 +343,7 @@ async def failed_captcha_sweep_worker(app: Client):
         else:
             logger.info("[sweep worker] no one were sweeped")
 
-        await asyncio.sleep(3600)
+        await asyncio.sleep(1800)
 
 
 async def main():
