@@ -260,6 +260,12 @@ async def verifyhandler(app: Client, message: Message) -> None:
             get_and_create_deleter_record(chat_id, message.id, create=True, delete_at=curr_time + DELETE_SECONDS)
             get_and_create_deleter_record(chat_id, wrong_code_msg.id, create=True, delete_at=curr_time + DELETE_SECONDS)
             asyncio.create_task(deleter(app, DELETE_SECONDS, chat_id, [wrong_code_msg.id, message.id]))
+        else:
+            forbid_msg = await message.reply(
+                "__Please solve the captcha before sending any message in this group. "
+                "This message and your message will be deleted in 5 seconds.__"
+            )
+            asyncio.create_task(deleter(app, 5, chat_id, [forbid_msg.id, message.id]))
         return
 
     vfy_success_msg = await message.reply(
